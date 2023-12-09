@@ -1,6 +1,8 @@
 using System.Net;
+using MassTransit;
 using Polly;
 using Polly.Extensions.Http;
+using SearchService.Consumers;
 using SearchService.Data;
 using SearchService.Services;
 
@@ -13,6 +15,29 @@ builder.Services.AddControllers();
 builder.Services
   .AddHttpClient<AuctionServiceHttpClient>()
   .AddPolicyHandler(GetPolicy());
+
+builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+
+builder.Services.AddMassTransit(options => {
+  options.AddConsumersFromNamespaceContaining<AuctionCreatedConsumer>();
+  //all endpoints will be prefixed with "search", and followed by the class name handled by a given consumer
+  //AuctionCreatedConsumer handler AuctionCreated messages, hence the endpoint: search-auction-created
+  options.SetEndpointNameFormatter(new KebabCaseEndpointNameFormatter("search", false));
+  
+  options.UsingRabbitMq( (context, cfg) => {
+    //configure specific enpoint
+    cfg.ReceiveEndpoint("search-auction-created", e =>
+    {
+      //retry 5 times, every 5 seconds
+      e.UseMessageRetry(r => r.Interval(5, 5));
+      //which consumer it is for?
+      e.ConfigureConsumer<AuctionCreatedConsumer>(context);
+    });
+
+    //configure all endpoints based on consumers that we have
+    cfg.ConfigureEndpoints(context);
+  });
+});  
 
 var app = builder.Build();
 

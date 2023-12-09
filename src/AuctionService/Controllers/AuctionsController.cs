@@ -3,6 +3,8 @@ using AuctionService.DTOs;
 using AuctionService.Entities;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
+using Contracts;
+using MassTransit;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,11 +16,13 @@ public class AuctionsController: ControllerBase
 {
   private readonly AuctionDbContext _context;
   private readonly IMapper _mapper;
+  private readonly IPublishEndpoint _publishEndpoint;
 
-  public AuctionsController(AuctionDbContext context, IMapper mapper)
+  public AuctionsController(AuctionDbContext context, IMapper mapper, IPublishEndpoint publishEndpoint)
   {
     _context = context;
     _mapper = mapper;
+    _publishEndpoint = publishEndpoint;
   }
 
   [HttpGet]
@@ -69,7 +73,13 @@ public class AuctionsController: ControllerBase
 
     //add tracking 
     _context.Auctions.Add(auction);
-    
+
+    //map entity to dto
+    var newAuction = _mapper.Map<AuctionDto>(auction);
+
+    //send to message bus
+    await _publishEndpoint.Publish(_mapper.Map<AuctionCreated>(newAuction));
+ 
     //make sure at least one change was saved to the db - success
     var result = await _context.SaveChangesAsync() > 0;
 
@@ -82,7 +92,7 @@ public class AuctionsController: ControllerBase
     return CreatedAtAction(
       nameof(GetAuctionById), 
       new {Id = auction.Id},
-      _mapper.Map<AuctionDto>(auction)
+      newAuction
     );
   }  
 
@@ -108,6 +118,9 @@ public class AuctionsController: ControllerBase
     auction.Item.Mileage = updateAuctionDto.Mileage ?? auction.Item.Mileage;
     auction.Item.Year = updateAuctionDto.Year ?? auction.Item.Year;
 
+    //send to message bus
+    await _publishEndpoint.Publish(_mapper.Map<AuctionUpdated>(auction));
+
     //auction was retrieved via EF and it is tracked in memory
     //we can just save the changes
     var result = await _context.SaveChangesAsync() > 0;
@@ -132,6 +145,9 @@ public class AuctionsController: ControllerBase
     // }  
 
     _context.Auctions.Remove(auction);
+
+    //await _publishEndpoint.Publish(_mapper.Map<AuctionDeleted>(auction));
+    await _publishEndpoint.Publish(new AuctionDeleted() { Id = auction.Id.ToString()});
 
     var result = await _context.SaveChangesAsync() > 0;
 

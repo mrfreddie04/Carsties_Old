@@ -49,7 +49,7 @@ public class DbInitializer
     var httpClient = scope.ServiceProvider.GetRequiredService<AuctionServiceHttpClient>();
     var items = await httpClient.GetItemsForSearchDb();
     
-    Console.WriteLine(items.Count + " returned from the aution service");
+    Console.WriteLine(items.Count + " returned from the auction service");
     if(items.Count > 0) 
     {
       await DB.SaveAsync(items);
